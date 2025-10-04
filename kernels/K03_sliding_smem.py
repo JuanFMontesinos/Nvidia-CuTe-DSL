@@ -27,9 +27,13 @@ def smem_sliding_kernel(A: cute.Tensor, B: cute.Tensor, C: cute.Tensor):
     
     acc = cute.Float32(0.0)
     for block_idx in range(n_blocks):
-        k_g = block_idx * BLOCKSIZE + tx                
-        A_s[ty,tx] = A[r, k_g]
-        B_s[ty,tx] = B[k_g, c]
+        kA = block_idx * BLOCKSIZE + tx   # k along tx for A
+        kB = block_idx * BLOCKSIZE + ty   # k along ty for B
+
+        # OOB-safe cooperative loads
+        A_s[ty, tx] = A[r, kA] if (r < M and kA < K) else cute.Float32(0.0)
+        B_s[ty, tx] = B[kB, c] if (kB < K and c < N) else cute.Float32(0.0)
+
         cute.arch.sync_threads()
         
         for k in range(BLOCKSIZE):
@@ -39,6 +43,7 @@ def smem_sliding_kernel(A: cute.Tensor, B: cute.Tensor, C: cute.Tensor):
             
     if r < M and c < N:
         C[r, c] = acc
+
 
 
 @cute.jit
